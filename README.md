@@ -232,7 +232,7 @@ bool ShoppingCart::isEmpty();
 
 ### Specifies the associated model
 
-Specifies the associated model of item before you add items to cart.
+Specifies the associated model of item.
 
 ```php
 Cart ShoppingCart::associate(string $modelName);
@@ -242,9 +242,6 @@ Cart ShoppingCart::associate(string $modelName);
 
 ```php
 ShoppingCart::associate('App\Models\Product');
-
-ShoppingCart::add(37, 'Item name', 5, 100.00, ['color' => 'red', 'size' => 'M']);
-
 $item = ShoppingCart::get('8a48aa7c8e5202841ddaf767bb4d10da');
 $item->product->name; // $item->product is instanceof 'App\Models\Product'
 ```
@@ -289,12 +286,6 @@ Event::listen('shopping_cart.adding', function($attributes, $cart){
     // code
 });
 ```
-
-## PHP 扩展包开发
-
-> 想知道如何从零开始构建 PHP 扩展包？
->
-> 请关注我的实战课程，我会在此课程中分享一些扩展开发经验 —— [《PHP 扩展包实战教程 - 从入门到发布》](https://learnku.com/courses/creating-package)
 
 # License
 

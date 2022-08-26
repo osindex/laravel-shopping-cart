@@ -9,7 +9,8 @@
 namespace Overtrue\LaravelShoppingCart;
 
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Session\SessionManager;
+// use Illuminate\Session\SessionManager;
+use Illuminate\Cache\CacheManager as SessionManager;
 use Illuminate\Support\Collection;
 
 /**
@@ -45,6 +46,9 @@ class Cart
      */
     protected $model;
 
+    //缓存有效时间
+    protected $time;
+
     /**
      * Constructor.
      *
@@ -53,17 +57,9 @@ class Cart
      */
     public function __construct(SessionManager $session, Dispatcher $event)
     {
+        $this->time = config('cache.time_limit');
         $this->session = $session;
         $this->event = $event;
-    }
-
-    public function dispatchEvent($event, $payload = [], $halt = false)
-    {
-        if (method_exists($this->event, 'fire')) {
-            return $this->event->fire($event, $payload, $halt);
-        }
-
-        return $this->event->dispatch($event, $payload, $halt);
     }
 
     /**
@@ -75,7 +71,7 @@ class Cart
      */
     public function name($name)
     {
-        $this->name = 'shopping_cart.'.$name;
+        $this->name = 'shopping_cart.' . $name;
 
         return $this;
     }
@@ -122,13 +118,13 @@ class Cart
     {
         $cart = $this->getCart();
 
-        $this->dispatchEvent('shopping_cart.adding', [$attributes, $cart]);
+        $this->event->fire('shopping_cart.adding', [$attributes, $cart]);
 
         $row = $this->addRow($id, $name, $qty, $price, $attributes);
 
         $cart = $this->getCart();
 
-        $this->dispatchEvent('shopping_cart.added', [$attributes, $cart]);
+        $this->event->fire('shopping_cart.added', [$attributes, $cart]);
 
         return $row;
     }
@@ -149,7 +145,7 @@ class Cart
 
         $cart = $this->getCart();
 
-        $this->dispatchEvent('shopping_cart.updating', [$row, $cart]);
+        $this->event->fire('shopping_cart.updating', [$row, $cart]);
 
         if (is_array($attribute)) {
             $raw = $this->updateAttribute($rawId, $attribute);
@@ -157,7 +153,7 @@ class Cart
             $raw = $this->updateQty($rawId, $attribute);
         }
 
-        $this->dispatchEvent('shopping_cart.updated', [$row, $cart]);
+        $this->event->fire('shopping_cart.updated', [$row, $cart]);
 
         return $raw;
     }
@@ -177,11 +173,11 @@ class Cart
 
         $cart = $this->getCart();
 
-        $this->dispatchEvent('shopping_cart.removing', [$row, $cart]);
+        $this->event->fire('shopping_cart.removing', [$row, $cart]);
 
         $cart->forget($rawId);
 
-        $this->dispatchEvent('shopping_cart.removed', [$row, $cart]);
+        $this->event->fire('shopping_cart.removed', [$row, $cart]);
 
         $this->save($cart);
 
@@ -199,7 +195,7 @@ class Cart
     {
         $row = $this->getCart()->get($rawId);
 
-        return null === $row ? null : new Item($row);
+        return is_null($row) ? null : new Item($row);
     }
 
     /**
@@ -211,11 +207,11 @@ class Cart
     {
         $cart = $this->getCart();
 
-        $this->dispatchEvent('shopping_cart.destroying', $cart);
+        $this->event->fire('shopping_cart.destroying', $cart);
 
         $this->save(null);
 
-        $this->dispatchEvent('shopping_cart.destroyed', $cart);
+        $this->event->fire('shopping_cart.destroyed', $cart);
 
         return true;
     }
@@ -301,7 +297,7 @@ class Cart
      *
      * @param array $search An array with the item ID and optional options
      *
-     * @return array|Collection
+     * @return array
      */
     public function search(array $search)
     {
@@ -313,7 +309,7 @@ class Cart
 
         foreach ($this->getCart() as $item) {
             if (array_intersect_assoc($item->intersect($search)->toArray(), $search)) {
-                $rows->put($item->__raw_id, $item);
+                $rows->put($item->__raw_id, $item,$this->time);
             }
         }
 
@@ -396,7 +392,7 @@ class Cart
     {
         ksort($attributes);
 
-        return md5($id.serialize($attributes));
+        return md5($id . serialize($attributes));
     }
 
     /**
@@ -408,7 +404,7 @@ class Cart
      */
     protected function save($cart)
     {
-        $this->session->put($this->name, $cart);
+        $this->session->put($this->name, $cart,$this->time);
 
         return $cart;
     }
@@ -440,14 +436,14 @@ class Cart
         $row = $cart->get($rawId);
 
         foreach ($attributes as $key => $value) {
-            $row->put($key, $value);
+            $row->put($key, $value,$this->time);
         }
 
         if (count(array_intersect(array_keys($attributes), ['qty', 'price']))) {
-            $row->put('total', $row->qty * $row->price);
+            $row->put('total', $row->qty * $row->price,$this->time);
         }
 
-        $cart->put($rawId, $row);
+        $cart->put($rawId, $row,$this->time);
 
         return $row;
     }
@@ -470,7 +466,7 @@ class Cart
 
         $cart = $this->getCart();
 
-        $cart->put($rawId, $newRow);
+        $cart->put($rawId, $newRow,$this->time);
 
         $this->save($cart);
 
@@ -480,26 +476,26 @@ class Cart
     /**
      * Make a row item.
      *
-     * @param string $rawId      raw id
-     * @param mixed  $id         item id
-     * @param string $name       item name
-     * @param int    $qty        quantity
-     * @param float  $price      price
-     * @param array  $attributes other attributes
+     * @param string $rawId      Raw id.
+     * @param mixed  $id         Item id.
+     * @param string $name       Item name.
+     * @param int    $qty        Quantity.
+     * @param float  $price      Price.
+     * @param array  $attributes Other attributes.
      *
      * @return Item
      */
     protected function makeRow($rawId, $id, $name, $qty, $price, array $attributes = [])
     {
         return new Item(array_merge([
-            '__raw_id' => $rawId,
-            'id' => $id,
-            'name' => $name,
-            'qty' => $qty,
-            'price' => $price,
-            'total' => $qty * $price,
-            '__model' => $this->model,
-        ], $attributes));
+                                     '__raw_id' => $rawId,
+                                     'id' => $id,
+                                     'name' => $name,
+                                     'qty' => $qty,
+                                     'price' => $price,
+                                     'total' => $qty * $price,
+                                     '__model' => $this->model,
+                                    ], $attributes));
     }
 
     /**

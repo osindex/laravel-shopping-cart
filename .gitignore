@@ -5,4 +5,3 @@
 !.gitkeep
 coverage
 .php_cs.cache
-composer.lock
